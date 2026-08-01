@@ -67,7 +67,7 @@ export function SiteNav() {
 
         <div className="flex items-center gap-2">
           <a
-            href="http://localhost:3000/signup"
+            href="https://cascade-1dvs8ty41-dev-kumar-raikwar-s-projects.vercel.app/signup"
             className="hidden min-h-11 items-center gap-1.5 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors duration-200 hover:bg-accent hover:text-accent-foreground md:inline-flex"
           >
             Get Started
@@ -134,7 +134,7 @@ export function SiteNav() {
               </ul>
 
               <a
-                href="http://localhost:3000/signup"
+                href="https://cascade-1dvs8ty41-dev-kumar-raikwar-s-projects.vercel.app/signup"
                 onClick={() => setOpen(false)}
                 className="mt-8 inline-flex min-h-12 items-center justify-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors duration-200 hover:bg-accent hover:text-accent-foreground"
               >

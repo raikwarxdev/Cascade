@@ -39,7 +39,7 @@ export function SiteFooter() {
         </Reveal>
         <Reveal delay={0.18}>
           <a
-            href="http://localhost:3000/signup"
+            href="https://cascade-1dvs8ty41-dev-kumar-raikwar-s-projects.vercel.app/signup"
             className="mt-10 inline-flex min-h-12 items-center gap-2 rounded-full bg-ink-foreground px-7 text-sm font-medium text-ink transition-colors duration-200 hover:bg-accent hover:text-accent-foreground"
           >
             Try Cascade now

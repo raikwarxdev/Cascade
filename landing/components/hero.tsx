@@ -63,7 +63,7 @@ export function Hero() {
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
-              href="http://localhost:3000/signup"
+              href="https://cascade-1dvs8ty41-dev-kumar-raikwar-s-projects.vercel.app/signup"
               className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors duration-200 hover:bg-accent hover:text-accent-foreground"
             >
               Start building free

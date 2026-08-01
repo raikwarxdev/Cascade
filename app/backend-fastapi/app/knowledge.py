@@ -12,6 +12,9 @@ person's ingested documents can never leak into another person's agent
 run, even though everyone shares one Qdrant collection (the standard
 Qdrant multi-tenancy pattern - one collection, payload-filtered, rather
 than a collection per user).
+
+Works against either a local Docker Qdrant (no auth) or Qdrant Cloud
+(requires an API key) - set QDRANT_API_KEY only for the Cloud case.
 """
 import os
 from typing import Optional
@@ -27,10 +30,12 @@ from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, Filt
 from llama_index.embeddings.fastembed import FastEmbedEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 
-# Reachable at http://qdrant:6333 from inside Docker Compose, or
-# http://localhost:6333 if you run the FastAPI app directly on your Mac
-# outside Docker - override with the QDRANT_URL env var either way.
+# Reachable at http://qdrant:6333 from inside Docker Compose locally, or a
+# Qdrant Cloud cluster URL in production - override with QDRANT_URL either
+# way. QDRANT_API_KEY is only needed for Qdrant Cloud; local Docker Qdrant
+# has no auth, so leave it unset locally.
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333")
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")  # None locally, set in prod
 COLLECTION_NAME = "cascade_knowledge"
 EMBED_DIM = 384  # output size of BAAI/bge-small-en-v1.5
 
@@ -42,7 +47,10 @@ _vector_store: Optional[QdrantVectorStore] = None
 def _get_client() -> QdrantClient:
     global _client
     if _client is None:
-        _client = QdrantClient(url=QDRANT_URL)
+        if QDRANT_API_KEY:
+            _client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        else:
+            _client = QdrantClient(url=QDRANT_URL)
     return _client
 
 
