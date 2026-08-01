@@ -1,0 +1,17 @@
+# Environment secrets - NEVER commit these
+.env
+
+# Node
+node_modules/
+.next/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Database
+platform.db
+
+# OS junk
+.DS_Store

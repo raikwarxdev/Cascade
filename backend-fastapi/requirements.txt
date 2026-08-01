@@ -1,0 +1,26 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+sqlalchemy==2.0.35
+pydantic>=2.11.5,<3.0.0
+PyJWT==2.9.0
+
+# Day 2 additions
+langgraph==0.2.34
+crewai
+
+# RAG additions - LlamaIndex + Qdrant, exact-pinned where I verified the
+# current PyPI release; llama-index-core is left unpinned so pip resolves
+# whatever version these two integration packages actually require.
+llama-index-core
+llama-index-vector-stores-qdrant==0.10.1
+llama-index-embeddings-fastembed==0.6.0
+qdrant-client
+beautifulsoup4
+requests
+pypdf
+
+# required by FastAPI to parse multipart file uploads (UploadFile/Form) -
+# without this, /knowledge/upload-pdf will fail at request time even
+# though the code imports fine
+python-multipart
+fastembed==0.4.2
