@@ -1,70 +1,39 @@
-# Agentic Workflow Platform
+# Cascade
 
-A multi-agent execution system (CrewAI) wrapped in a stateful orchestration
-layer (LangGraph) with self-correcting retries, a human-approval checkpoint,
-and a live execution trace dashboard — instead of a plain chat window.
+A multi-agent AI workflow platform with self-correcting retries, a human-approval checkpoint, and a live execution trace — not just a chat window.
 
-## Stack
-- **FastAPI** — runs the LangGraph + CrewAI orchestration, streams trace events
-- **Node.js/Express** — auth (JWT) + WebSocket relay of live trace events
-- **Next.js/React** — landing, auth, dashboard, and live run-detail pages
-- **Qdrant** — vector store for LlamaIndex-powered retrieval
-- **Docker Compose** — one-command local spin-up
+**Live demo:** https://cascade-855w.vercel.app
+**App:** https://cascade-eosin-six.vercel.app
+**GitHub:** https://github.com/raikwarxdev/Cascade
 
-## Day 1 status (this scaffold)
-- [x] Folder structure for all 4 services
-- [x] docker-compose boots FastAPI, Node, Qdrant, Next.js together
-- [x] FastAPI: `/health`, `/tasks` (create/list/get) backed by SQLite
-- [x] Node: `/health`, `/auth/signup`, `/auth/login`, WebSocket endpoint stub
-- [x] Next.js: landing, signup, login, dashboard (create + list tasks), run-detail page
+## What it does
 
-## Run it
-```bash
-docker-compose up --build
+Submit a research task → a 3-agent crew (Researcher, Analyst, Writer) works through it live in your browser. The Researcher retrieves from your own uploaded documents (RAG via LlamaIndex + Qdrant) when relevant. The Analyst validates the research and automatically sends it back for another pass if it doesn't meet the bar — you watch this retry happen in real time. Once a draft is ready, it's held at a checkpoint until you explicitly approve it — nothing is marked complete without a human sign-off.
+
+## Architecture
+
+This is a monorepo with two deployable halves:
+
 ```
-- Frontend: http://localhost:3000
-- FastAPI docs: http://localhost:8000/docs
-- Node gateway: http://localhost:4000/health
-- Qdrant dashboard: http://localhost:6333/dashboard
+app/
+├── frontend/          Next.js 14 (Pages Router) — auth, dashboard, live trace UI
+├── backend-fastapi/   FastAPI + LangGraph + CrewAI + LlamaIndex/Qdrant RAG
+└── backend-node/      Express — email/password + Google OAuth, issues JWTs
+landing/               Next.js 16 (App Router) — marketing site
+```
 
-## 7-Day Build Plan
+- **Orchestration:** LangGraph owns the control flow (routing, retries, when to stop); CrewAI owns the agent reasoning
+- **LLM provider:** Groq (Llama 3.3 70B)
+- **RAG:** LlamaIndex ingestion pipeline → FastEmbed local embeddings → Qdrant vector store, metadata-filtered per user
+- **Auth:** JWT issued by Node, verified independently by FastAPI via a shared secret; Google OAuth via Google Identity Services
+- **Real-time:** Server-Sent Events stream every agent step to the browser live
+- **Deployment:** Vercel (both Next.js apps), Railway (both backends), Qdrant Cloud (vector store)
 
-**Day 1 — Foundation (done in this scaffold)**
-Repo structure, Docker Compose, FastAPI + Node + Next.js skeletons all talking
-to each other. Sign up, log in, create a dummy task, see it listed.
+## Run it locally
 
-**Day 2 — AI engine core loop**
-Open `backend-fastapi/app/graph.py` — build the LangGraph state machine
-(Researcher -> Analyst -> retry loop -> Writer) wrapping 3 CrewAI agents.
-Test end-to-end from a standalone script before touching the API.
+```bash
+cd app
+docker compose up -d --build
+```
 
-**Day 3 — RAG layer + streaming**
-Wire LlamaIndex ingestion (docs/URLs -> chunks -> embeddings -> Qdrant) as a
-tool for the Researcher agent. Add an SSE endpoint in FastAPI that streams
-every node transition, tool call, and retry event as JSON.
-
-**Day 4 — Live trace dashboard**
-Node relays the SSE stream over the existing WebSocket (`/ws/traces`) to the
-frontend. Build the visual pipeline view in `pages/runs/[id].js` — nodes
-lighting up as they fire, retry loop shown as a loop-back arrow, and a real
-Approve/Reject button at the human-checkpoint node.
-
-**Day 5 — Full site pages**
-Landing page copy, polished auth pages, dashboard stats (total runs, success
-rate, avg retries), settings page for API keys if doing multi-user.
-
-**Day 6 — Polish + edge cases**
-Loading/error states, rate limiting on the Node gateway, responsive pass,
-seed demo data, finish this README with an architecture diagram.
-
-**Day 7 — Deploy + proof**
-Frontend -> Vercel. FastAPI + Node -> Railway/Render. Qdrant -> Qdrant Cloud
-free tier (or a Docker container on Railway). Test the deployed URL end to
-end, record a 90-second demo video, tag `v1.0` on GitHub.
-
-## Non-negotiables (don't cut these even if behind schedule)
-1. The retry loop (Analyst rejects -> back to Researcher)
-2. The live trace view (not just a final chat message)
-3. The human-approval checkpoint button
-
-These three are what separate this from a standard LangChain RAG tutorial.
+Frontend on `localhost:3000`, FastAPI on `localhost:8000`, Node on `localhost:4000`, Qdrant on `localhost:6333`.
