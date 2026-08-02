@@ -12,21 +12,33 @@ One real browser limitation: the native EventSource API (used for the
 live SSE trace) cannot send custom Authorization headers. So the stream
 endpoint accepts the token as a query param instead - everything else
 uses the standard Authorization: Bearer <token> header.
+
+RAG ADDITION: knowledge sources (text/URLs/PDFs a user uploads) are
+ingested into a shared Qdrant collection via LlamaIndex, tagged per-user,
+and the Researcher agent retrieves from them during a run.
+See app/knowledge.py and app/tools.py.
 """
 import json
 import os
+import uuid
 from typing import Optional
+
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import create_engine, Column, String, DateTime, Integer
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from pydantic import BaseModel
 from datetime import datetime
-import uuid
 
 from app.graph import compiled_graph
+from app.knowledge import (
+    ingest_text,
+    fetch_url_text,
+    extract_pdf_text,
+    delete_source as delete_source_vectors,
+)
 
 DATABASE_URL = "sqlite:///./platform.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -48,6 +60,16 @@ class TaskRun(Base):
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
     force_fail_once = Column(Integer, default=0)  # SQLite has no bool type
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class KnowledgeSource(Base):
+    __tablename__ = "knowledge_sources"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    source_name = Column(String, nullable=False)
+    source_type = Column(String, nullable=False)  # "text" | "url" | "pdf"
+    chunk_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -258,3 +280,123 @@ def stream_task(task_id: str, token: str, api_key: Optional[str] = None, db: Ses
             db_local.close()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# KNOWLEDGE BASE (RAG) ENDPOINTS
+# ---------------------------------------------------------------------------
+class KnowledgeCreate(BaseModel):
+    text: Optional[str] = None
+    url: Optional[str] = None
+    source_name: Optional[str] = None
+
+
+@app.post("/knowledge/upload")
+def upload_knowledge(
+    payload: KnowledgeCreate,
+    user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.url:
+        text = fetch_url_text(payload.url)
+        source_type = "url"
+        name = payload.source_name or payload.url
+    elif payload.text:
+        text = payload.text
+        source_type = "text"
+        name = payload.source_name or "Pasted text"
+    else:
+        raise HTTPException(status_code=400, detail="Provide either 'text' or 'url'")
+
+    source_id = str(uuid.uuid4())
+    chunk_count = ingest_text(user_id=user, source_id=source_id, source_name=name, text=text)
+
+    source = KnowledgeSource(
+        id=source_id,
+        user_id=user,
+        source_name=name,
+        source_type=source_type,
+        chunk_count=chunk_count,
+    )
+    db.add(source)
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "id": source.id,
+        "source_name": source.source_name,
+        "source_type": source.source_type,
+        "chunk_count": source.chunk_count,
+        "created_at": source.created_at.isoformat(),
+    }
+
+
+@app.post("/knowledge/upload-pdf")
+async def upload_knowledge_pdf(
+    file: UploadFile = File(...),
+    user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    file_bytes = await file.read()
+    text = extract_pdf_text(file_bytes)
+    if not text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="No extractable text found in this PDF (it may be a scanned image with no text layer).",
+        )
+
+    source_id = str(uuid.uuid4())
+    chunk_count = ingest_text(user_id=user, source_id=source_id, source_name=file.filename, text=text)
+
+    source = KnowledgeSource(
+        id=source_id,
+        user_id=user,
+        source_name=file.filename,
+        source_type="pdf",
+        chunk_count=chunk_count,
+    )
+    db.add(source)
+    db.commit()
+    db.refresh(source)
+
+    return {
+        "id": source.id,
+        "source_name": source.source_name,
+        "source_type": source.source_type,
+        "chunk_count": source.chunk_count,
+        "created_at": source.created_at.isoformat(),
+    }
+
+
+@app.get("/knowledge")
+def list_knowledge(user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    sources = (
+        db.query(KnowledgeSource)
+        .filter(KnowledgeSource.user_id == user)
+        .order_by(KnowledgeSource.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": s.id,
+            "source_name": s.source_name,
+            "source_type": s.source_type,
+            "chunk_count": s.chunk_count,
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in sources
+    ]
+
+
+@app.delete("/knowledge/{source_id}")
+def delete_knowledge(source_id: str, user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    source = db.query(KnowledgeSource).filter(KnowledgeSource.id == source_id, KnowledgeSource.user_id == user).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    delete_source_vectors(source_id)
+    db.delete(source)
+    db.commit()
+    return {"deleted": True, "id": source_id}
