@@ -69,6 +69,20 @@ def _ensure_collection() -> None:
             collection_name=COLLECTION_NAME,
             vectors_config=qmodels.VectorParams(size=EMBED_DIM, distance=qmodels.Distance.COSINE),
         )
+    # Qdrant Cloud (unlike local Docker Qdrant) requires an explicit payload
+    # index before you can filter or delete by a field - without this,
+    # retrieve_context's user_id filter and delete_source's source_id
+    # filter both fail with "Index required but not found". Safe to call
+    # repeatedly - Qdrant no-ops if the index already exists.
+    for field in ("user_id", "source_id"):
+        try:
+            client.create_payload_index(
+                collection_name=COLLECTION_NAME,
+                field_name=field,
+                field_schema=qmodels.PayloadSchemaType.KEYWORD,
+            )
+        except Exception:
+            pass  # already exists - fine
 
 
 def _get_vector_store() -> QdrantVectorStore:
