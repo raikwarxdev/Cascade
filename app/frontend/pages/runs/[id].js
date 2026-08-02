@@ -269,6 +269,8 @@ function ThinkingLoader() {
     </div>
   );
 }
+
+function ApprovalCheck() {
   return (
     <div
       style={{
