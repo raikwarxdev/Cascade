@@ -102,7 +102,173 @@ function TraceCard({ event, index, isLatest, stillStreaming }) {
   );
 }
 
-function ApprovalCheck() {
+const AGENT_CHAT_SCRIPT = [
+  ["researcher", "found three good sources on this"],
+  ["analyst", "prove it, don't just tell me"],
+  ["researcher", "checking them against each other now"],
+  ["analyst", "that stat looks inflated. source?"],
+  ["researcher", "fair — pulling the raw number instead"],
+  ["analyst", "better. approved."],
+  ["writer", "finally. can I write it now?"],
+  ["analyst", "go ahead. don't editorialize"],
+  ["writer", "no promises"],
+];
+
+const AGENT_CHAT_STYLE = {
+  researcher: { align: "left" },
+  analyst: { align: "right" },
+  writer: { align: "left" },
+};
+
+function agentColor(key) {
+  if (key === "researcher") return colors.accent;
+  if (key === "analyst") return colors.primary;
+  return colors.mutedForeground;
+}
+
+function TypingDots({ color }) {
+  return (
+    <div style={{ display: "flex", gap: 3 }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: color,
+            display: "inline-block",
+            animation: `typeBounce 1s ease-in-out ${i * 0.15}s infinite`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ThinkingLoader() {
+  const [messages, setMessages] = useState([]);
+  const [typingAgent, setTypingAgent] = useState("researcher");
+  const timeoutsRef = useRef([]);
+  const stepRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function schedule(fn, delay) {
+      const t = setTimeout(() => {
+        if (!cancelled) fn();
+      }, delay);
+      timeoutsRef.current.push(t);
+    }
+
+    function step() {
+      const [agentKey, text] = AGENT_CHAT_SCRIPT[stepRef.current % AGENT_CHAT_SCRIPT.length];
+      setTypingAgent(agentKey);
+      schedule(() => {
+        setTypingAgent(null);
+        setMessages((prev) => {
+          const next = [...prev, { agentKey, text, id: `${stepRef.current}-${Date.now()}` }];
+          return next.length > 4 ? next.slice(next.length - 4) : next;
+        });
+        stepRef.current += 1;
+        schedule(step, 550);
+      }, 650);
+    }
+
+    step();
+
+    return () => {
+      cancelled = true;
+      timeoutsRef.current.forEach(clearTimeout);
+      timeoutsRef.current = [];
+    };
+  }, []);
+
+  return (
+    <div style={{ ...cardStyle, padding: 20, maxWidth: 380 }}>
+      <style jsx global>{`
+        @keyframes typeBounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-3px); opacity: 1; }
+        }
+        @keyframes chatBubbleIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 180 }}>
+        {messages.map((m) => {
+          const align = AGENT_CHAT_STYLE[m.agentKey].align;
+          const color = agentColor(m.agentKey);
+          return (
+            <div
+              key={m.id}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: align === "left" ? "flex-start" : "flex-end",
+                animation: "chatBubbleIn 0.28s ease both",
+              }}
+            >
+              <div style={{ fontFamily: fontSerif, fontSize: 10, color: colors.mutedForeground, margin: "0 6px 2px" }}>
+                {NODE_LABELS[m.agentKey] || m.agentKey}
+              </div>
+              <div
+                style={{
+                  maxWidth: "78%",
+                  padding: "8px 12px",
+                  borderRadius: 14,
+                  fontSize: 13,
+                  lineHeight: 1.4,
+                  fontFamily: fontSans,
+                  ...(align === "left"
+                    ? {
+                        background: colors.background,
+                        color: colors.foreground,
+                        border: `1px solid ${color}55`,
+                        borderBottomLeftRadius: 4,
+                      }
+                    : {
+                        background: color,
+                        color: colors.background,
+                        borderBottomRightRadius: 4,
+                      }),
+                }}
+              >
+                {m.text}
+              </div>
+            </div>
+          );
+        })}
+
+        {typingAgent && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: AGENT_CHAT_STYLE[typingAgent].align === "left" ? "flex-start" : "flex-end",
+            }}
+          >
+            <div
+              style={{
+                padding: "8px 14px",
+                borderRadius: 14,
+                background: colors.background,
+                border: `1px solid ${agentColor(typingAgent)}40`,
+                ...(AGENT_CHAT_STYLE[typingAgent].align === "left"
+                  ? { borderBottomLeftRadius: 4 }
+                  : { borderBottomRightRadius: 4 }),
+              }}
+            >
+              <TypingDots color={agentColor(typingAgent)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
   return (
     <div
       style={{
@@ -218,6 +384,23 @@ export default function RunDetail() {
       .then(setTask);
   }, [id]);
 
+  const [cancelling, setCancelling] = useState(false);
+
+  async function cancelTask() {
+    if (!id) return;
+    setCancelling(true);
+    try {
+      await authFetch(`${FASTAPI_API}/tasks/${id}/cancel`, { method: "POST" });
+    } finally {
+      if (eventSourceRef.current) eventSourceRef.current.close();
+      setStreaming(false);
+      setCancelling(false);
+      authFetch(`${FASTAPI_API}/tasks/${id}`)
+        .then((res) => res.json())
+        .then(setTask);
+    }
+  }
+
   function startStream() {
     if (!id) return;
     setEvents([]);
@@ -304,32 +487,72 @@ export default function RunDetail() {
           </div>
         )}
 
-        <button
-          onClick={startStream}
-          disabled={streaming}
-          style={{
-            padding: "12px 24px",
-            borderRadius: 999,
-            border: "none",
-            background: streaming ? colors.mutedForeground : colors.primary,
-            color: colors.primaryForeground,
-            fontWeight: 600,
-            fontSize: 14,
-            cursor: streaming ? "default" : "pointer",
-            fontFamily: fontSans,
-            transition: "background 0.2s ease",
-            marginBottom: 32,
-          }}
-          onMouseEnter={(e) => !streaming && (e.currentTarget.style.background = colors.accent)}
-          onMouseLeave={(e) => !streaming && (e.currentTarget.style.background = colors.primary)}
-        >
-          {streaming ? "Running..." : "Start run"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
+          <button
+            onClick={startStream}
+            disabled={streaming}
+            style={{
+              padding: "12px 24px",
+              borderRadius: 999,
+              border: "none",
+              background: streaming ? colors.mutedForeground : colors.primary,
+              color: colors.primaryForeground,
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: streaming ? "default" : "pointer",
+              fontFamily: fontSans,
+              transition: "background 0.2s ease",
+            }}
+            onMouseEnter={(e) => !streaming && (e.currentTarget.style.background = colors.accent)}
+            onMouseLeave={(e) => !streaming && (e.currentTarget.style.background = colors.primary)}
+          >
+            {streaming ? "Running..." : "Start run"}
+          </button>
+
+          {streaming && (
+            <button
+              onClick={cancelTask}
+              disabled={cancelling}
+              style={{
+                padding: "12px 22px",
+                borderRadius: 999,
+                border: `1px solid ${colors.destructive}`,
+                background: "transparent",
+                color: colors.destructive,
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: cancelling ? "default" : "pointer",
+                fontFamily: fontSans,
+                transition: "background 0.2s ease, color 0.2s ease",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+              onMouseEnter={(e) => {
+                if (cancelling) return;
+                e.currentTarget.style.background = colors.destructive;
+                e.currentTarget.style.color = "#fff";
+              }}
+              onMouseLeave={(e) => {
+                if (cancelling) return;
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = colors.destructive;
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+              {cancelling ? "Stopping..." : "Stop"}
+            </button>
+          )}
+        </div>
       </FadeIn>
 
       <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: colors.foreground }}>Live trace</h2>
 
-      {events.length === 0 ? (
+      {events.length === 0 && streaming ? (
+        <ThinkingLoader />
+      ) : events.length === 0 ? (
         <div style={{ ...cardStyle, textAlign: "center", padding: 32, color: colors.mutedForeground, fontFamily: fontSerif }}>
           No events yet — click Start run.
         </div>

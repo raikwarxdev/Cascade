@@ -35,6 +35,7 @@ provider's model automatically.
 """
 import json
 import os
+import threading
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -215,6 +216,15 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# In-memory registry of active runs' cancel signals, keyed by task_id.
+# A run checks its flag between agent steps (not mid-LLM-call - there's
+# no safe way to interrupt a blocking CrewAI/LiteLLM call already in
+# flight) and stops before starting the next one. This is per-process
+# state, same accepted-limitation category as the in-memory user store -
+# fine for this project's scope, would need a shared store (Redis etc)
+# to survive a restart or work across multiple server instances.
+_cancel_flags: dict[str, threading.Event] = {}
+
 # Must match backend-node's JWT_SECRET exactly - same env var name, same value.
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me")
 
@@ -385,6 +395,27 @@ def approve_task(task_id: str, user: str = Depends(get_current_user), db: Sessio
     return {"id": task.id, "status": task.status}
 
 
+@app.post("/tasks/{task_id}/cancel")
+def cancel_task(task_id: str, user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = db.query(TaskRun).filter(TaskRun.id == task_id, TaskRun.user_id == user).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Signal the in-flight run (if any) to stop before its next agent
+    # step. If there's no active stream for this task_id (e.g. the
+    # browser tab was closed and the run already finished or crashed),
+    # this just marks the task cancelled directly.
+    cancel_event = _cancel_flags.get(task_id)
+    if cancel_event:
+        cancel_event.set()
+
+    if task.status in ("pending", "running"):
+        task.status = "cancelled"
+        db.commit()
+
+    return {"id": task.id, "status": task.status}
+
+
 @app.get("/stats")
 def get_stats(user: str = Depends(get_current_user), db: Session = Depends(get_db)):
     tasks = db.query(TaskRun).filter(TaskRun.user_id == user).all()
@@ -546,6 +577,9 @@ def stream_task(
     # Built once per request - nothing global, nothing to restore afterward.
     llm = build_llm(provider=provider, api_key=api_key, provider_name=provider_name)
 
+    cancel_event = threading.Event()
+    _cancel_flags[task_id] = cancel_event
+
     def event_generator():
         db_local = SessionLocal()
         try:
@@ -585,12 +619,21 @@ def stream_task(
                     db_task.final_report = node_output.get("final_report", "")
                     db_local.commit()
 
+                # Checked after each completed step - stops before the
+                # next agent starts, rather than mid-call.
+                if cancel_event.is_set():
+                    db_task.status = "cancelled"
+                    db_local.commit()
+                    yield f"data: {json.dumps({'event': 'done', 'status': 'cancelled'})}\n\n"
+                    return
+
             if db_task.status not in ("awaiting_approval", "completed"):
                 db_task.status = "failed"
                 db_local.commit()
 
             yield f"data: {json.dumps({'event': 'done', 'status': db_task.status})}\n\n"
         finally:
+            _cancel_flags.pop(task_id, None)
             db_local.close()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
