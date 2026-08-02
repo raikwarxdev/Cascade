@@ -2,17 +2,37 @@
 
 A multi-agent AI workflow platform with self-correcting retries, a human-approval checkpoint, and a live execution trace — not just a chat window.
 
-**Live demo:** https://cascade-855w.vercel.app
-**App:** https://cascade-eosin-six.vercel.app
-**GitHub:** https://github.com/raikwarxdev/Cascade
+## The problem this solves
 
-## What it does
+Most AI agent demos assume the model gets it right the first time. If it doesn't, there's no mechanism to catch it — a bad answer just goes through, or a human has to notice and manually re-prompt. Cascade assumes the opposite: that a single AI pass can be wrong, and builds real correction and oversight into the pipeline itself, instead of trusting one shot.
 
-Submit a research task → a 3-agent crew (Researcher, Analyst, Writer) works through it live in your browser. The Researcher retrieves from your own uploaded documents (RAG via LlamaIndex + Qdrant) when relevant. The Analyst validates the research and automatically sends it back for another pass if it doesn't meet the bar — you watch this retry happen in real time. Once a draft is ready, it's held at a checkpoint until you explicitly approve it — nothing is marked complete without a human sign-off.
+## How it works
+
+1. **You submit a task** — a topic or question you want researched and written up.
+2. **The Researcher agent** investigates it. If you've uploaded documents to your knowledge base, it retrieves relevant passages from them first (real RAG — chunked, embedded, and vector-searched, not just pasted into a prompt) before falling back on general knowledge.
+3. **The Analyst agent** reviews that research for accuracy, completeness, and bias — independently, as a second opinion, not just the same model checking its own work.
+4. **If the Analyst rejects it**, the task automatically goes back to the Researcher with the specific rejection reason attached, and it tries again — up to a limit you control. You watch this retry happen live, not after the fact.
+5. **Once research passes**, the Writer agent drafts the final report.
+6. **Nothing is marked complete automatically.** The draft is held at a checkpoint — a human has to explicitly click Approve before it's considered done. This is the actual human-in-the-loop mechanism, not just a UI label.
+7. **The whole run streams live** to your browser, node by node, as it happens — so you can see exactly which agent is working, whether validation passed or failed, and how many retries have occurred.
+
+## What you can configure
+
+- **Max retries per task** — how many times the Analyst can send work back before the system gives up gracefully instead of looping forever
+- **Your own Groq API key** — optionally paste your own key in Settings to run tasks under your own account/quota instead of the app's default key; used only for your next run, stored only in your browser
+- **A demo toggle** to force one guaranteed retry on the first attempt, so the correction loop is visible on command rather than left to chance — clearly labeled, off by default
+
+## Everything else that's real, not decorative
+
+- **Per-user data isolation** — every task and every uploaded document is scoped to the account that created it, enforced server-side via JWT verification, not just hidden in the UI
+- **Two ways to sign in** — email/password or Google OAuth, both producing the same verified session
+- **A knowledge base** — upload PDFs, which get chunked, embedded locally (FastEmbed), and stored in a Qdrant vector database; the Researcher agent queries this during a run
+- **Live dashboard stats** — total runs, success rate, and average retries, computed from real stored data
+- **Delete controls** — remove individual tasks or clear your entire history at any time
 
 ## Architecture
 
-This is a monorepo with two deployable halves:
+A monorepo with two deployable halves:
 
 ```
 app/
