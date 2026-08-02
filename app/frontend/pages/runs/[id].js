@@ -186,7 +186,7 @@ function ThinkingLoader() {
   }, []);
 
   return (
-    <div style={{ ...cardStyle, padding: 20, maxWidth: 380 }}>
+    <div style={{ ...cardStyle, padding: 28, maxWidth: 680, width: "100%", margin: "0 auto" }}>
       <style jsx global>{`
         @keyframes typeBounce {
           0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
