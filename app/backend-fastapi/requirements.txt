@@ -14,7 +14,7 @@ crewai
 llama-index-core
 llama-index-vector-stores-qdrant==0.10.1
 llama-index-embeddings-fastembed==0.6.0
-qdrant-client
+qdrant-client<1.17.0
 beautifulsoup4
 requests
 pypdf
