@@ -19,6 +19,7 @@ export default function Signup() {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
+  const [slowMessage, setSlowMessage] = useState(false);
   const router = useRouter();
 
   function handleContinue(e) {
@@ -39,6 +40,10 @@ export default function Signup() {
     e.preventDefault();
     setLoading(true);
     setError(false);
+    const slowTimer = setTimeout(() => {
+      setSlowMessage(true);
+    }, 3000);
+
     try {
       const res = await fetch(`${NODE_API}/auth/signup`, {
         method: "POST",
@@ -60,6 +65,8 @@ export default function Signup() {
       setError(true);
     } finally {
       setLoading(false);
+      clearTimeout(slowTimer);
+      setSlowMessage(false);
     }
   }
 
@@ -159,7 +166,7 @@ export default function Signup() {
               onMouseEnter={(e) => !loading && (e.currentTarget.style.background = colors.accent)}
               onMouseLeave={(e) => !loading && (e.currentTarget.style.background = colors.primary)}
             >
-              {loading ? "Creating account..." : showPassword ? "Sign up" : "Continue"}
+              {loading ? (slowMessage ? "Waking up server..." : "Creating account...") : showPassword ? "Sign up" : "Continue"}
             </button>
 
             {showPassword && (

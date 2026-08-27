@@ -17,6 +17,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
+  const [slowMessage, setSlowMessage] = useState(false);
   const router = useRouter();
 
   function handleContinue(e) {
@@ -35,6 +36,10 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    const slowTimer = setTimeout(() => {
+      setSlowMessage(true);
+    }, 3000);
+
     try {
       const res = await fetch(`${NODE_API}/auth/login`, {
         method: "POST",
@@ -55,6 +60,8 @@ export default function Login() {
       setError("Could not reach the server");
     } finally {
       setLoading(false);
+      clearTimeout(slowTimer);
+      setSlowMessage(false);
     }
   }
 
@@ -144,7 +151,7 @@ export default function Login() {
               onMouseEnter={(e) => !loading && (e.currentTarget.style.background = colors.accent)}
               onMouseLeave={(e) => !loading && (e.currentTarget.style.background = colors.primary)}
             >
-              {loading ? "Logging in..." : showPassword ? "Log in" : "Continue"}
+              {loading ? (slowMessage ? "Waking up server..." : "Logging in...") : showPassword ? "Log in" : "Continue"}
             </button>
 
             {showPassword && (
