@@ -13,7 +13,14 @@ const { WebSocketServer } = require("ws");
 const http = require("http");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "https://cascade-eosin-six.vercel.app",
+    "https://cascade-855w.vercel.app"
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
