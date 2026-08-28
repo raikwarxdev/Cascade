@@ -35,7 +35,7 @@ from app.tools import make_knowledge_tool
 # Used only if a run somehow arrives with no llm object at all (shouldn't
 # happen in normal use - app/main.py always builds one - but keeps this
 # module safe to call directly, e.g. in tests).
-DEFAULT_LLM = LLM(model="groq/llama-3.3-70b-versatile")
+DEFAULT_LLM = LLM(model="groq/openai/gpt-oss-120b")
 MAX_RETRIES = 3
 
 
