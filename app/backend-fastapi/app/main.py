@@ -632,6 +632,19 @@ def stream_task(
                 db_local.commit()
 
             yield f"data: {json.dumps({'event': 'done', 'status': db_task.status})}\n\n"
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error executing graph for task {task_id}: {error_trace}")
+            try:
+                db_task = db_local.query(TaskRun).filter(TaskRun.id == task_id).first()
+                if db_task:
+                    db_task.status = "failed"
+                    db_task.final_report = f"### Run Failed\n\nAn error occurred during agent execution:\n\n```\n{str(e)}\n```\n\n#### Technical Traceback:\n```\n{error_trace}\n```"
+                    db_local.commit()
+            except Exception as db_err:
+                print(f"Failed to update db status on error: {db_err}")
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e), 'status': 'failed'})}\n\n"
         finally:
             _cancel_flags.pop(task_id, None)
             db_local.close()

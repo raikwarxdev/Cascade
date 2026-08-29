@@ -427,9 +427,11 @@ export default function RunDetail() {
 
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      setEvents((prev) => [...prev, data]);
+      if (data.event !== "error") {
+        setEvents((prev) => [...prev, data]);
+      }
 
-      if (data.event === "done") {
+      if (data.event === "done" || data.event === "error") {
         setStreaming(false);
         es.close();
         authFetch(`${FASTAPI_API}/tasks/${id}`)
@@ -441,6 +443,9 @@ export default function RunDetail() {
     es.onerror = () => {
       setStreaming(false);
       es.close();
+      authFetch(`${FASTAPI_API}/tasks/${id}`)
+        .then((res) => res.json())
+        .then(setTask);
     };
   }
 
