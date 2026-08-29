@@ -81,20 +81,26 @@ export default function Dashboard() {
     e.preventDefault();
     if (!topic) return;
     setCreating(true);
-    await authFetch(`${FASTAPI_API}/tasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        topic,
-        max_retries: Number(localStorage.getItem("cascade_max_retries")) || 3,
-        force_fail_once: forceFailOnce,
-      }),
-    });
-    setTopic("");
-    setForceFailOnce(false);
-    setCreating(false);
-    loadTasks();
-    loadStats();
+    try {
+      await authFetch(`${FASTAPI_API}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          max_retries: Number(localStorage.getItem("cascade_max_retries")) || 3,
+          force_fail_once: forceFailOnce,
+        }),
+      });
+      setTopic("");
+      setForceFailOnce(false);
+    } catch (err) {
+      console.error("Create task failed:", err);
+      alert("Failed to connect to the backend server. Make sure the API URL is correct and the server is running.");
+    } finally {
+      setCreating(false);
+      loadTasks();
+      loadStats();
+    }
   }
 
   return (
