@@ -27,7 +27,7 @@ from qdrant_client import QdrantClient, models as qmodels
 from llama_index.core import VectorStoreIndex, Document, StorageContext, load_index_from_storage
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
-from llama_index.embeddings.fastembed import FastEmbedEmbedding
+from llama_index.core.embeddings import MockEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 
 # Reachable at http://qdrant:6333 from inside Docker Compose locally, or a
@@ -40,7 +40,7 @@ COLLECTION_NAME = "cascade_knowledge"
 EMBED_DIM = 384  # output size of BAAI/bge-small-en-v1.5
 
 _client: Optional[QdrantClient] = None
-_embed_model: Optional[FastEmbedEmbedding] = None
+_embed_model: Optional[MockEmbedding] = None
 _vector_store: Optional[QdrantVectorStore] = None
 
 
@@ -63,11 +63,10 @@ def _get_client() -> Optional[QdrantClient]:
     return _client
 
 
-def _get_embed_model() -> FastEmbedEmbedding:
+def _get_embed_model() -> MockEmbedding:
     global _embed_model
     if _embed_model is None:
-        # Downloads once (~77MB) on first use, then cached on disk.
-        _embed_model = FastEmbedEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        _embed_model = MockEmbedding(embed_dim=EMBED_DIM)
     return _embed_model
 
 
