@@ -44,13 +44,22 @@ _embed_model: Optional[FastEmbedEmbedding] = None
 _vector_store: Optional[QdrantVectorStore] = None
 
 
-def _get_client() -> QdrantClient:
-    global _client
+QDRANT_ONLINE = True
+
+def _get_client() -> Optional[QdrantClient]:
+    global _client, QDRANT_ONLINE
+    if not QDRANT_ONLINE:
+        return None
     if _client is None:
-        if QDRANT_API_KEY:
-            _client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-        else:
-            _client = QdrantClient(url=QDRANT_URL)
+        try:
+            if QDRANT_API_KEY:
+                _client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=5)
+            else:
+                _client = QdrantClient(url=QDRANT_URL, timeout=5)
+        except Exception as e:
+            print(f"Warning: Failed to connect to Qdrant at {QDRANT_URL}: {e}")
+            QDRANT_ONLINE = False
+            _client = None
     return _client
 
 
@@ -63,41 +72,61 @@ def _get_embed_model() -> FastEmbedEmbedding:
 
 
 def _ensure_collection() -> None:
+    global QDRANT_ONLINE
     client = _get_client()
-    if not client.collection_exists(COLLECTION_NAME):
-        client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=qmodels.VectorParams(size=EMBED_DIM, distance=qmodels.Distance.COSINE),
-        )
-    # Qdrant Cloud (unlike local Docker Qdrant) requires an explicit payload
-    # index before you can filter or delete by a field - without this,
-    # retrieve_context's user_id filter and delete_source's source_id
-    # filter both fail with "Index required but not found". Safe to call
-    # repeatedly - Qdrant no-ops if the index already exists.
-    for field in ("user_id", "source_id"):
-        try:
-            client.create_payload_index(
+    if not client or not QDRANT_ONLINE:
+        return
+    try:
+        if not client.collection_exists(COLLECTION_NAME):
+            client.create_collection(
                 collection_name=COLLECTION_NAME,
-                field_name=field,
-                field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                vectors_config=qmodels.VectorParams(size=EMBED_DIM, distance=qmodels.Distance.COSINE),
             )
-        except Exception:
-            pass  # already exists - fine
+        # Qdrant Cloud (unlike local Docker Qdrant) requires an explicit payload
+        # index before you can filter or delete by a field - without this,
+        # retrieve_context's user_id filter and delete_source's source_id
+        # filter both fail with "Index required but not found". Safe to call
+        # repeatedly - Qdrant no-ops if the index already exists.
+        for field in ("user_id", "source_id"):
+            try:
+                client.create_payload_index(
+                    collection_name=COLLECTION_NAME,
+                    field_name=field,
+                    field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                )
+            except Exception:
+                pass  # already exists - fine
+    except Exception as e:
+        print(f"Warning: Qdrant collection check failed, disabling Qdrant RAG: {e}")
+        QDRANT_ONLINE = False
 
 
-def _get_vector_store() -> QdrantVectorStore:
-    global _vector_store
+def _get_vector_store() -> Optional[QdrantVectorStore]:
+    global _vector_store, QDRANT_ONLINE
+    if not QDRANT_ONLINE:
+        return None
     if _vector_store is None:
         _ensure_collection()
+        if not QDRANT_ONLINE:
+            return None
         _vector_store = QdrantVectorStore(client=_get_client(), collection_name=COLLECTION_NAME)
     return _vector_store
 
 
-def _get_index() -> VectorStoreIndex:
-    return VectorStoreIndex.from_vector_store(
-        vector_store=_get_vector_store(),
-        embed_model=_get_embed_model(),
-    )
+def _get_index() -> Optional[VectorStoreIndex]:
+    global QDRANT_ONLINE
+    store = _get_vector_store()
+    if not store or not QDRANT_ONLINE:
+        return None
+    try:
+        return VectorStoreIndex.from_vector_store(
+            vector_store=store,
+            embed_model=_get_embed_model(),
+        )
+    except Exception as e:
+        print(f"Warning: Failed to build VectorStoreIndex: {e}")
+        QDRANT_ONLINE = False
+        return None
 
 
 def fetch_url_text(url: str) -> str:
@@ -128,6 +157,9 @@ def extract_pdf_text(file_bytes: bytes) -> str:
 
 def ingest_text(user_id: str, source_id: str, source_name: str, text: str) -> int:
     """Chunk + embed + store `text`, tagged to this user and source. Returns chunk count."""
+    global QDRANT_ONLINE
+    if not QDRANT_ONLINE:
+        raise Exception("Vector database (Qdrant) is currently offline.")
     splitter = SentenceSplitter(chunk_size=512, chunk_overlap=50)
     doc = Document(
         text=text,
@@ -137,21 +169,29 @@ def ingest_text(user_id: str, source_id: str, source_name: str, text: str) -> in
     if not nodes:
         return 0
     index = _get_index()
+    if not index:
+        raise Exception("Vector database index is unavailable.")
     index.insert_nodes(nodes)
     return len(nodes)
 
 
 def delete_source(source_id: str) -> None:
     """Remove every chunk belonging to one ingested source from Qdrant."""
+    global QDRANT_ONLINE
     client = _get_client()
-    client.delete(
-        collection_name=COLLECTION_NAME,
-        points_selector=qmodels.FilterSelector(
-            filter=qmodels.Filter(
-                must=[qmodels.FieldCondition(key="source_id", match=qmodels.MatchValue(value=source_id))]
-            )
-        ),
-    )
+    if not client or not QDRANT_ONLINE:
+        return
+    try:
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=qmodels.FilterSelector(
+                filter=qmodels.Filter(
+                    must=[qmodels.FieldCondition(key="source_id", match=qmodels.MatchValue(value=source_id))]
+                )
+            ),
+        )
+    except Exception as e:
+        print(f"Failed to delete source {source_id}: {e}")
 
 
 def retrieve_context(user_id: str, query: str, top_k: int = 4) -> str:
@@ -164,19 +204,26 @@ def retrieve_context(user_id: str, query: str, top_k: int = 4) -> str:
     query-engine synthesis step - the Researcher agent (running on Groq)
     is what should read and incorporate this, not a second LLM call.
     """
+    global QDRANT_ONLINE
     index = _get_index()
-    filters = MetadataFilters(
-        filters=[MetadataFilter(key="user_id", value=user_id, operator=FilterOperator.EQ)]
-    )
-    retriever = index.as_retriever(similarity_top_k=top_k, filters=filters)
-    nodes = retriever.retrieve(query)
+    if not index or not QDRANT_ONLINE:
+        return "Note: The knowledge base is currently offline because the vector store (Qdrant) is unreachable. Proceeding using general knowledge."
+    try:
+        filters = MetadataFilters(
+            filters=[MetadataFilter(key="user_id", value=user_id, operator=FilterOperator.EQ)]
+        )
+        retriever = index.as_retriever(similarity_top_k=top_k, filters=filters)
+        nodes = retriever.retrieve(query)
 
-    if not nodes:
-        return "No relevant documents found in the knowledge base for this query."
+        if not nodes:
+            return "No relevant documents found in the knowledge base for this query."
 
-    chunks = []
-    for i, n in enumerate(nodes, start=1):
-        source = n.node.metadata.get("source_name", "unknown source")
-        score = round(n.score, 3) if n.score is not None else "n/a"
-        chunks.append(f"[{i}] (source: {source}, relevance: {score})\n{n.node.get_content()}")
-    return "\n\n---\n\n".join(chunks)
+        chunks = []
+        for i, n in enumerate(nodes, start=1):
+            source = n.node.metadata.get("source_name", "unknown source")
+            score = round(n.score, 3) if n.score is not None else "n/a"
+            chunks.append(f"[{i}] (source: {source}, relevance: {score})\n{n.node.get_content()}")
+        return "\n\n---\n\n".join(chunks)
+    except Exception as e:
+        print(f"Warning: Failed to retrieve from Qdrant: {e}")
+        return "Note: Failed to query the knowledge base (unreachable). Proceeding using general knowledge."
