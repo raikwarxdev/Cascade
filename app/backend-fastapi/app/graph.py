@@ -26,6 +26,7 @@ object is just a plain per-call argument, so there's nothing shared to
 stomp on.
 """
 import os
+import time
 from typing import TypedDict, Any
 from crewai import Agent, Task, Crew, Process, LLM
 from langgraph.graph import StateGraph, END
@@ -127,6 +128,11 @@ def researcher_node(state: WorkflowState) -> WorkflowState:
 
 
 def analyst_node(state: WorkflowState) -> WorkflowState:
+    llm = state.get("llm") or DEFAULT_LLM
+    if llm and "groq" in getattr(llm, "model", ""):
+        # Sleep to reset Groq's tight 8k tokens/minute free tier limit
+        time.sleep(20)
+
     # DEMO MODE: if the person explicitly checked "force one retry" when
     # creating the task, deterministically fail the FIRST validation pass
     # so the retry loop is guaranteed to be visible - useful for a demo
@@ -167,6 +173,9 @@ def analyst_node(state: WorkflowState) -> WorkflowState:
 
 def writer_node(state: WorkflowState) -> WorkflowState:
     llm = state.get("llm") or DEFAULT_LLM
+    if llm and "groq" in getattr(llm, "model", ""):
+        # Sleep to reset Groq's tight 8k tokens/minute free tier limit
+        time.sleep(20)
     agent = make_writer(llm)
     task = Task(
         description=(
