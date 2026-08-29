@@ -24,7 +24,7 @@ from bs4 import BeautifulSoup
 from pypdf import PdfReader
 import io
 from qdrant_client import QdrantClient, models as qmodels
-from llama_index.core import VectorStoreIndex, Document
+from llama_index.core import VectorStoreIndex, Document, StorageContext, load_index_from_storage
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
 from llama_index.embeddings.fastembed import FastEmbedEmbedding
@@ -113,11 +113,32 @@ def _get_vector_store() -> Optional[QdrantVectorStore]:
     return _vector_store
 
 
-def _get_index() -> Optional[VectorStoreIndex]:
+PERSIST_DIR = "./storage"
+
+def _get_local_index() -> VectorStoreIndex:
+    embed_model = _get_embed_model()
+    try:
+        if os.path.exists(PERSIST_DIR) and os.listdir(PERSIST_DIR):
+            storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
+            index = load_index_from_storage(storage_context, embed_model=embed_model)
+            return index
+    except Exception as e:
+        print(f"Warning: Failed to load local storage index: {e}")
+        
+    storage_context = StorageContext.from_defaults()
+    index = VectorStoreIndex(nodes=[], storage_context=storage_context, embed_model=embed_model)
+    try:
+        storage_context.persist(persist_dir=PERSIST_DIR)
+    except Exception as e:
+        print(f"Warning: Failed to persist new storage context: {e}")
+    return index
+
+
+def _get_index() -> VectorStoreIndex:
     global QDRANT_ONLINE
     store = _get_vector_store()
     if not store or not QDRANT_ONLINE:
-        return None
+        return _get_local_index()
     try:
         return VectorStoreIndex.from_vector_store(
             vector_store=store,
@@ -126,7 +147,7 @@ def _get_index() -> Optional[VectorStoreIndex]:
     except Exception as e:
         print(f"Warning: Failed to build VectorStoreIndex: {e}")
         QDRANT_ONLINE = False
-        return None
+        return _get_local_index()
 
 
 def fetch_url_text(url: str) -> str:
@@ -158,8 +179,6 @@ def extract_pdf_text(file_bytes: bytes) -> str:
 def ingest_text(user_id: str, source_id: str, source_name: str, text: str) -> int:
     """Chunk + embed + store `text`, tagged to this user and source. Returns chunk count."""
     global QDRANT_ONLINE
-    if not QDRANT_ONLINE:
-        raise Exception("Vector database (Qdrant) is currently offline.")
     splitter = SentenceSplitter(chunk_size=512, chunk_overlap=50)
     doc = Document(
         text=text,
@@ -169,15 +188,35 @@ def ingest_text(user_id: str, source_id: str, source_name: str, text: str) -> in
     if not nodes:
         return 0
     index = _get_index()
-    if not index:
-        raise Exception("Vector database index is unavailable.")
     index.insert_nodes(nodes)
+    if not QDRANT_ONLINE:
+        try:
+            index.storage_context.persist(persist_dir=PERSIST_DIR)
+        except Exception as e:
+            print(f"Failed to persist index after insertion: {e}")
     return len(nodes)
 
 
 def delete_source(source_id: str) -> None:
-    """Remove every chunk belonging to one ingested source from Qdrant."""
+    """Remove every chunk belonging to one ingested source from Qdrant or local storage."""
     global QDRANT_ONLINE
+    if not QDRANT_ONLINE:
+        index = _get_local_index()
+        doc_ids_to_delete = []
+        for doc_id, node in index.storage_context.docstore.docs.items():
+            if node.metadata.get("source_id") == source_id:
+                doc_ids_to_delete.append(doc_id)
+        for doc_id in doc_ids_to_delete:
+            try:
+                index.delete_ref_doc(doc_id, delete_from_docstore=True)
+            except Exception as e:
+                print(f"Failed to delete ref doc {doc_id} locally: {e}")
+        try:
+            index.storage_context.persist(persist_dir=PERSIST_DIR)
+        except Exception as e:
+            print(f"Failed to persist index after local deletion: {e}")
+        return
+
     client = _get_client()
     if not client or not QDRANT_ONLINE:
         return
@@ -191,7 +230,7 @@ def delete_source(source_id: str) -> None:
             ),
         )
     except Exception as e:
-        print(f"Failed to delete source {source_id}: {e}")
+        print(f"Failed to delete source {source_id} from Qdrant: {e}")
 
 
 def retrieve_context(user_id: str, query: str, top_k: int = 4) -> str:
@@ -206,8 +245,6 @@ def retrieve_context(user_id: str, query: str, top_k: int = 4) -> str:
     """
     global QDRANT_ONLINE
     index = _get_index()
-    if not index or not QDRANT_ONLINE:
-        return "Note: The knowledge base is currently offline because the vector store (Qdrant) is unreachable. Proceeding using general knowledge."
     try:
         filters = MetadataFilters(
             filters=[MetadataFilter(key="user_id", value=user_id, operator=FilterOperator.EQ)]
@@ -225,5 +262,5 @@ def retrieve_context(user_id: str, query: str, top_k: int = 4) -> str:
             chunks.append(f"[{i}] (source: {source}, relevance: {score})\n{n.node.get_content()}")
         return "\n\n---\n\n".join(chunks)
     except Exception as e:
-        print(f"Warning: Failed to retrieve from Qdrant: {e}")
-        return "Note: Failed to query the knowledge base (unreachable). Proceeding using general knowledge."
+        print(f"Warning: Failed to retrieve: {e}")
+        return "Note: Failed to query the knowledge base. Proceeding using general knowledge."
