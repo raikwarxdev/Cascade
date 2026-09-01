@@ -91,6 +91,12 @@ def _patched_litellm_completion(*args, **kwargs):
                 fallback_kwargs = dict(kwargs)
                 fallback_kwargs["model"] = fb_model
                 fallback_kwargs["api_key"] = groq_key
+                # Pop cached client objects bound to the failing provider/key
+                fallback_kwargs.pop("client", None)
+                fallback_kwargs.pop("client_options", None)
+                fallback_kwargs.pop("api_base", None)
+                fallback_kwargs.pop("base_url", None)
+                fallback_kwargs.pop("custom_llm_provider", None)
                 try:
                     return _original_litellm_completion(*args, **fallback_kwargs)
                 except Exception as fb_exc:
@@ -103,8 +109,20 @@ litellm.completion = _patched_litellm_completion
 
 
 def format_clean_error(exc: Exception) -> str:
-    err_str = str(exc)
-    if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
+    err_str = str(exc).lower()
+    if "invalid" in err_str or "api_key" in err_str or "unauthorized" in err_str or "auth" in err_str or "401" in err_str or "400" in err_str:
+        return (
+            "================================================================================\n"
+            "SERVICE NOTICE: API KEY ISSUE DETECTED\n"
+            "================================================================================\n\n"
+            "The custom API key configured in Settings returned an invalid or unauthorized response.\n\n"
+            "How to resolve:\n"
+            "1. Open Settings -> API Key in the top navigation.\n"
+            "2. Verify or update your API key, or select Groq default to use the system key.\n"
+            "3. Click 'Start run' again.\n\n"
+            "================================================================================"
+        )
+    elif "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
         return (
             "================================================================================\n"
             "SERVICE NOTICE: PROVIDER RATE LIMIT / QUOTA REACHED\n"
