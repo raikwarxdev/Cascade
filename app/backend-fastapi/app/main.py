@@ -51,6 +51,25 @@ from pydantic import BaseModel
 
 from app.graph import compiled_graph
 from app.knowledge import ingest_text, fetch_url_text, extract_pdf_text, delete_source as delete_source_vectors
+import litellm
+
+# Google Gemini API requires conversation histories to strictly end on a user turn.
+# CrewAI agent loops can pass payloads ending on assistant/model turns after tool outputs.
+# This patch intercepts LiteLLM calls for Gemini models and ensures a trailing user turn is present.
+_original_litellm_completion = litellm.completion
+
+def _patched_litellm_completion(*args, **kwargs):
+    messages = kwargs.get("messages")
+    if messages and isinstance(messages, list) and len(messages) > 0:
+        model = kwargs.get("model", "")
+        if "gemini" in model.lower():
+            if messages[-1].get("role") in ["assistant", "model"]:
+                messages = list(messages)
+                messages.append({"role": "user", "content": "Please analyze the tool output and complete the task."})
+                kwargs["messages"] = messages
+    return _original_litellm_completion(*args, **kwargs)
+
+litellm.completion = _patched_litellm_completion
 
 # Provider picker for Settings -> "your own API key" feature. Groq is the
 # only one with a built-in server-side key (via GROQ_API_KEY already set
