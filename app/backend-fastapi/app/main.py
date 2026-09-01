@@ -82,7 +82,7 @@ def _patched_litellm_completion(*args, **kwargs):
                 time.sleep(2 * (attempt + 1))
                 continue
             if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
-                # If custom key or model hits quota/rate limit, fall back to server's groq/qwen model with server key
+                # If custom key or model hits quota/rate limit, fall back to server's groq/qwen model with server key & retry loop
                 fallback_kwargs = dict(kwargs)
                 fallback_kwargs["model"] = "groq/qwen/qwen3.6-27b"
                 groq_key = os.environ.get("GROQ_API_KEY")
@@ -90,10 +90,16 @@ def _patched_litellm_completion(*args, **kwargs):
                     fallback_kwargs["api_key"] = groq_key
                 else:
                     fallback_kwargs.pop("api_key", None)
-                try:
-                    return _original_litellm_completion(*args, **fallback_kwargs)
-                except Exception:
-                    raise exc
+
+                for fb_attempt in range(3):
+                    try:
+                        return _original_litellm_completion(*args, **fallback_kwargs)
+                    except Exception as fb_exc:
+                        fb_err_str = str(fb_exc).lower()
+                        if ("429" in fb_err_str or "rate" in fb_err_str or "quota" in fb_err_str or "503" in fb_err_str) and fb_attempt < 2:
+                            time.sleep(15)
+                            continue
+                        raise exc
             raise exc
 
 litellm.completion = _patched_litellm_completion

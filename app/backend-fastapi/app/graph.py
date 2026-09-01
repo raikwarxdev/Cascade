@@ -131,10 +131,8 @@ def researcher_node(state: WorkflowState) -> WorkflowState:
 
 
 def analyst_node(state: WorkflowState) -> WorkflowState:
-    llm = state.get("llm") or DEFAULT_LLM
-    if llm and "groq" in getattr(llm, "model", ""):
-        # Sleep to reset Groq's tight 8k tokens/minute free tier limit
-        time.sleep(20)
+    # Sleep to reset rate limit / token bucket for all providers
+    time.sleep(10)
 
     # DEMO MODE: if the person explicitly checked "force one retry" when
     # creating the task, deterministically fail the FIRST validation pass
@@ -175,10 +173,9 @@ def analyst_node(state: WorkflowState) -> WorkflowState:
 
 
 def writer_node(state: WorkflowState) -> WorkflowState:
+    # Sleep to reset rate limit / token bucket for all providers
+    time.sleep(10)
     llm = state.get("llm") or DEFAULT_LLM
-    if llm and "groq" in getattr(llm, "model", ""):
-        # Sleep to reset Groq's tight 8k tokens/minute free tier limit
-        time.sleep(20)
     agent = make_writer(llm)
     task = Task(
         description=(
