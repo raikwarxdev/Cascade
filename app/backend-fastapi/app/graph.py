@@ -87,11 +87,14 @@ def make_analyst(llm: Any):
 def make_writer(llm: Any):
     return Agent(
         role="Writer",
-        goal="Turn validated research into a clear, well-structured report",
+        goal="Turn validated research into an executive-ready, highly structured, beautifully formatted technical report",
         backstory=(
-            "You are a professional technical writer. You take verified "
-            "research and turn it into a polished, readable report with "
-            "clear sections - no fluff, no filler."
+            "You are a principal technical writer and executive communications expert. "
+            "You format technical reports with clean section headers, visual ASCII block/architecture diagrams, "
+            "and clean ASCII tables. You NEVER use '#' or '##' markdown hashtag headers in your output. "
+            "Instead, you use elegant dividers ('====================' and '--------------------'), "
+            "numbered/lettered section titles ('1. TERMINOLOGY', 'A. Subfield'), clean bullet points ('•'), "
+            "and ASCII diagrams so the report is 100% clean and ready to copy-paste directly into Word, Docs, or emails."
         ),
         llm=llm,
         verbose=True,
@@ -110,13 +113,13 @@ def researcher_node(state: WorkflowState) -> WorkflowState:
 
     task = Task(
         description=(
-            f"Research the topic: '{state['topic']}'.{feedback_context}\n\n"
+            f"Research the topic: '{state['topic']}'.\n\n"
             f"First, use the search_knowledge_base tool to check for relevant "
             f"uploaded material. Then supplement with your own knowledge as "
             f"needed. If the tool returns nothing relevant, say so explicitly "
-            f"and proceed using general knowledge."
+            f"and proceed using general knowledge.{feedback_context}"
         ),
-        expected_output="A clear, organized set of research notes with key facts and sources of uncertainty flagged.",
+        expected_output="Clear, factual research notes formatted logically.",
         agent=agent,
     )
     result = Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff()
@@ -156,12 +159,12 @@ def analyst_node(state: WorkflowState) -> WorkflowState:
             f"Respond starting with exactly 'PASS' or 'FAIL' on the first line, "
             f"then explain why in 2-3 sentences."
         ),
-        expected_output="A verdict of PASS or FAIL on the first line, followed by reasoning.",
+        expected_output="PASS or FAIL followed by a brief 2-3 sentence explanation.",
         agent=agent,
     )
     result = str(Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff())
 
-    passed = result.strip().upper().startswith("PASS")
+    passed = result.strip().startswith("PASS")
 
     return {
         **state,
@@ -179,10 +182,17 @@ def writer_node(state: WorkflowState) -> WorkflowState:
     agent = make_writer(llm)
     task = Task(
         description=(
-            f"Write a final report on '{state['topic']}' using this validated "
-            f"research:\n\n{state['research_notes']}"
+            f"Write an executive-ready, highly structured, clean technical report on '{state['topic']}' "
+            f"using this validated research:\n\n{state['research_notes']}\n\n"
+            f"CRITICAL FORMATTING REQUIREMENTS:\n"
+            f"1. DO NOT use '#' or '##' hashtag headers in your report anywhere.\n"
+            f"2. Use '================================================================================' for the main document title and end of report.\n"
+            f"3. Use '--------------------------------------------------------------------------------' under section titles (e.g. EXECUTIVE SUMMARY, 1. TERMINOLOGY & TAXONOMY).\n"
+            f"4. Include an ASCII architecture or taxonomy diagram (using +, -, |, ->) to visually illustrate system concepts or flow.\n"
+            f"5. Format tables using clean ASCII borders (+-----+-----+).\n"
+            f"6. Make the document 100% clean and ready to copy-paste directly into Word/Docs."
         ),
-        expected_output="A polished, well-structured report in markdown.",
+        expected_output="An executive-ready, beautifully structured technical report with ASCII diagrams, clean dividers, no hashtag headers, and clean tables.",
         agent=agent,
     )
     result = Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff()
