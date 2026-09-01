@@ -36,7 +36,7 @@ from app.tools import make_knowledge_tool
 # Used only if a run somehow arrives with no llm object at all (shouldn't
 # happen in normal use - app/main.py always builds one - but keeps this
 # module safe to call directly, e.g. in tests).
-DEFAULT_LLM = LLM(model="groq/qwen/qwen3.6-27b")
+DEFAULT_LLM = LLM(model="groq/qwen/qwen3.6-27b", max_tokens=4096)
 MAX_RETRIES = 3
 
 
@@ -179,17 +179,18 @@ def writer_node(state: WorkflowState) -> WorkflowState:
     agent = make_writer(llm)
     task = Task(
         description=(
-            f"Write an executive-ready, highly structured, clean technical report on '{state['topic']}' "
+            f"Write a comprehensive, in-depth, fully detailed technical report on '{state['topic']}' "
             f"using this validated research:\n\n{state['research_notes']}\n\n"
-            f"CRITICAL FORMATTING REQUIREMENTS:\n"
+            f"CRITICAL FORMATTING & COMPLETENESS REQUIREMENTS:\n"
             f"1. DO NOT use '#' or '##' hashtag headers in your report anywhere.\n"
             f"2. Use '================================================================================' for the main document title and end of report.\n"
             f"3. Use '--------------------------------------------------------------------------------' under section titles (e.g. EXECUTIVE SUMMARY, 1. TERMINOLOGY & TAXONOMY).\n"
             f"4. Include an ASCII architecture or taxonomy diagram (using +, -, |, ->) to visually illustrate system concepts or flow.\n"
             f"5. Format tables using clean ASCII borders (+-----+-----+).\n"
-            f"6. Make the document 100% clean and ready to copy-paste directly into Word/Docs."
+            f"6. Provide extensive technical detail, explanations, and depth for all terms, subfields, applications, and challenges.\n"
+            f"7. Ensure the report is 100% complete and NEVER cut off mid-sentence."
         ),
-        expected_output="An executive-ready, beautifully structured technical report with ASCII diagrams, clean dividers, no hashtag headers, and clean tables.",
+        expected_output="A comprehensive, highly detailed executive technical report with ASCII diagrams, clean dividers, no hashtag headers, and clean tables.",
         agent=agent,
     )
     result = Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff()

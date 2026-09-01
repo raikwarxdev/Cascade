@@ -294,13 +294,13 @@ def build_llm(provider: Optional[str], api_key: Optional[str], provider_name: Op
                 )
             model = DETECTED_MODEL_MAP[detected]
 
-        return LLM(model=model, api_key=api_key.strip())
+        return LLM(model=model, api_key=api_key.strip(), max_tokens=4096)
 
     provider_key = provider if provider in PROVIDER_CONFIG else DEFAULT_PROVIDER
     kwargs = {"model": PROVIDER_CONFIG[provider_key]["model"]}
     if api_key:
         kwargs["api_key"] = api_key
-    return LLM(**kwargs)
+    return LLM(**kwargs, max_tokens=4096)
 
 
 DATABASE_URL = "sqlite:///./platform.db"
