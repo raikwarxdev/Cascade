@@ -59,8 +59,8 @@ from app.knowledge import ingest_text, fetch_url_text, extract_pdf_text, delete_
 # separately below since it has no fixed model string.
 PROVIDER_CONFIG = {
     "groq": {"model": "groq/qwen/qwen3.6-27b"},
-    "gemini": {"model": "gemini/gemini-3.5-flash"},
-    "claude": {"model": "anthropic/claude-haiku-4-5-20251001"},
+    "gemini": {"model": "gemini/gemini-3.6-flash"},
+    "claude": {"model": "anthropic/claude-3-5-haiku-20241022"},
     "openai": {"model": "openai/gpt-4o-mini"},
 }
 DEFAULT_PROVIDER = "groq"
@@ -91,8 +91,8 @@ KEY_PREFIX_MAP = [
 # Model string used for each auto-detected-by-prefix provider.
 DETECTED_MODEL_MAP = {
     "groq": "groq/qwen/qwen3.6-27b",
-    "claude": "anthropic/claude-haiku-4-5-20251001",
-    "gemini": "gemini/gemini-3.5-flash",
+    "claude": "anthropic/claude-3-5-haiku-20241022",
+    "gemini": "gemini/gemini-3.6-flash",
     "openai": "openai/gpt-4o-mini",
     "openrouter": "openrouter/auto",
     "perplexity": "perplexity/sonar",
