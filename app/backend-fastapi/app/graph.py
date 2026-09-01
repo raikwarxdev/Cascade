@@ -180,31 +180,30 @@ def writer_node(state: WorkflowState) -> WorkflowState:
     llm = state.get("llm") or DEFAULT_LLM
     agent = make_writer(llm)
 
-    import urllib.parse
-    topic_clean = urllib.parse.quote(f"clean modern system architecture infographic diagram for {state['topic']}, professional enterprise technical flowchart chart, high quality")
-    diagram_url = f"https://image.pollinations.ai/prompt/{topic_clean}?width=1024&height=512&nologo=true"
-    image_tag = f"![System Architecture Diagram for {state['topic']}]({diagram_url})"
-
     task = Task(
         description=(
             f"Write a comprehensive, in-depth, fully detailed technical report on '{state['topic']}' "
             f"using this validated research:\n\n{state['research_notes']}\n\n"
             f"CRITICAL FORMATTING & COMPLETENESS REQUIREMENTS:\n"
-            f"1. DO NOT use '#' or '##' hashtag headers in your report anywhere.\n"
-            f"2. Use '================================================================================' for the main document title and end of report.\n"
-            f"3. Use '--------------------------------------------------------------------------------' under section titles (e.g. EXECUTIVE SUMMARY, 1. TERMINOLOGY & TAXONOMY).\n"
-            f"4. Under section '2. SYSTEM ARCHITECTURE', YOU MUST include this exact markdown image line on its own line:\n"
-            f"{image_tag}\n"
-            f"5. For applications and comparisons, use clean bulleted key-value sections or clean markdown tables.\n"
-            f"6. Provide extensive technical detail and explanations for all sections: Executive Summary, 1. Terminology, 2. Architecture, 3. Applications, 4. Challenges & Risks, 5. Strategic Roadmap.\n"
-            f"7. Ensure the report is 100% complete and NEVER cut off mid-sentence."
+            f"1. DO NOT include any internal reasoning or '<think>' tags in your final output.\n"
+            f"2. DO NOT use '#' or '##' hashtag headers in your report anywhere.\n"
+            f"3. Use '================================================================================' for the main document title and end of report.\n"
+            f"4. Use '--------------------------------------------------------------------------------' under section titles (e.g. EXECUTIVE SUMMARY, 1. TERMINOLOGY & TAXONOMY).\n"
+            f"5. For system architecture, use clean text flowcharts (e.g. [Layer 1: Sensors] ---> [Layer 2: Cloud Engine] ---> [Layer 3: Actuation]). DO NOT draw wide '+---+---|' ASCII boxes.\n"
+            f"6. For applications and comparisons, use clean bulleted key-value sections or clean markdown tables.\n"
+            f"7. Provide extensive technical detail and explanations for all sections: Executive Summary, 1. Terminology, 2. Architecture, 3. Applications, 4. Challenges & Risks, 5. Strategic Roadmap.\n"
+            f"8. Ensure the report is 100% complete and NEVER cut off mid-sentence."
         ),
-        expected_output="A comprehensive, highly detailed executive technical report with an embedded visual diagram image graphic, clean dividers, no hashtag headers, and full completeness.",
+        expected_output="A comprehensive, highly detailed executive technical report with clean text flowcharts, clean dividers, no hashtag headers, no internal thinking tags, and full completeness.",
         agent=agent,
     )
-    result = Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff()
+    result = str(Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff())
 
-    return {**state, "final_report": str(result)}
+    # Strip any internal model reasoning (<think>...</think>) if present
+    import re
+    clean_report = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip()
+
+    return {**state, "final_report": clean_report}
 
 
 def route_after_validation(state: WorkflowState) -> str:

@@ -700,44 +700,8 @@ export default function RunDetail() {
               {copied ? "Copied ✓" : "Copy"}
             </button>
           </div>
-          <div style={{ ...cardStyle, fontFamily: fontSans, fontSize: 14, lineHeight: 1.7, overflowX: "auto" }}>
-            {(() => {
-              const text = task.final_report;
-              if (!text) return null;
-              const parts = text.split(/(!\[.*?\]\(.*?\))/g);
-              return parts.map((part, index) => {
-                const match = part.match(/^!\[(.*?)\]\((.*?)\)$/);
-                if (match) {
-                  const alt = match[1] || "System Architecture Diagram";
-                  const src = match[2];
-                  return (
-                    <div key={index} style={{ margin: "28px 0", textAlign: "center" }}>
-                      <img
-                        src={src}
-                        alt={alt}
-                        style={{
-                          maxWidth: "100%",
-                          height: "auto",
-                          maxHeight: 450,
-                          borderRadius: 12,
-                          border: `1px solid ${colors.border}`,
-                          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
-                          display: "block",
-                          margin: "0 auto",
-                          objectFit: "contain",
-                        }}
-                      />
-                      {alt && (
-                        <span style={{ display: "block", marginTop: 10, fontSize: 12, color: colors.mutedForeground, fontStyle: "italic" }}>
-                          Figure 1: {alt}
-                        </span>
-                      )}
-                    </div>
-                  );
-                }
-                return <span key={index} style={{ whiteSpace: "pre-wrap" }}>{part}</span>;
-              });
-            })()}
+          <div style={{ ...cardStyle, fontFamily: fontSans, fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowX: "auto" }}>
+            {task.final_report}
           </div>
         </FadeIn>
       )}
