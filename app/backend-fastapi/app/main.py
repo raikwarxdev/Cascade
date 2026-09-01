@@ -82,25 +82,31 @@ def _patched_litellm_completion(*args, **kwargs):
                 time.sleep(2 * (attempt + 1))
                 continue
             if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
-                # If custom key or model hits quota/rate limit, fall back to server's groq/qwen model with server key & retry loop
-                fallback_kwargs = dict(kwargs)
-                fallback_kwargs["model"] = "groq/qwen/qwen3.6-27b"
+                # Fall back across Groq's model cascade (qwen -> llama -> mixtral) to bypass single-model token buckets
+                fallback_models = [
+                    "groq/qwen/qwen3.6-27b",
+                    "groq/llama-3.3-70b-versatile",
+                    "groq/mixtral-8x7b-32768",
+                ]
                 groq_key = os.environ.get("GROQ_API_KEY")
-                if groq_key:
-                    fallback_kwargs["api_key"] = groq_key
-                else:
-                    fallback_kwargs.pop("api_key", None)
-
-                for fb_attempt in range(3):
-                    try:
-                        return _original_litellm_completion(*args, **fallback_kwargs)
-                    except Exception as fb_exc:
-                        fb_err_str = str(fb_exc).lower()
-                        if ("429" in fb_err_str or "rate" in fb_err_str or "quota" in fb_err_str or "503" in fb_err_str) and fb_attempt < 2:
-                            time.sleep(15)
-                            continue
-                        raise exc
-            raise exc
+                for cycle in range(2):
+                    for fb_model in fallback_models:
+                        fallback_kwargs = dict(kwargs)
+                        fallback_kwargs["model"] = fb_model
+                        if groq_key:
+                            fallback_kwargs["api_key"] = groq_key
+                        else:
+                            fallback_kwargs.pop("api_key", None)
+                        try:
+                            return _original_litellm_completion(*args, **fallback_kwargs)
+                        except Exception as fb_exc:
+                            fb_err_str = str(fb_exc).lower()
+                            if "429" in fb_err_str or "rate" in fb_err_str or "quota" in fb_err_str or "503" in fb_err_str:
+                                continue
+                            raise exc
+                    # If all models in the cascade hit rate limits, pause 15s to reset the 60s bucket
+                    time.sleep(15)
+                raise exc
 
 litellm.completion = _patched_litellm_completion
 
