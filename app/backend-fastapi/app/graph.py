@@ -90,11 +90,13 @@ def make_writer(llm: Any):
         goal="Turn validated research into an executive-ready, highly structured, beautifully formatted technical report",
         backstory=(
             "You are a principal technical writer and executive communications expert. "
-            "You format technical reports with clean section headers, visual ASCII block/architecture diagrams, "
-            "and clean ASCII tables. You NEVER use '#' or '##' markdown hashtag headers in your output. "
+            "You format technical reports with clean section headers, clear bullet points, "
+            "structured key-value matrices, and clean horizontal dividers. "
+            "You NEVER use '#' or '##' markdown hashtag headers in your output. "
             "Instead, you use elegant dividers ('====================' and '--------------------'), "
-            "numbered/lettered section titles ('1. TERMINOLOGY', 'A. Subfield'), clean bullet points ('•'), "
-            "and ASCII diagrams so the report is 100% clean and ready to copy-paste directly into Word, Docs, or emails."
+            "numbered section titles ('1. TERMINOLOGY & TAXONOMY', '2. SYSTEM ARCHITECTURE'), "
+            "and clean flow diagrams (e.g., [Sensor] --> [Cloud Engine] --> [Actuator]) so the report is "
+            "100% clean, professional, and ready to copy-paste directly into Word, Docs, or emails."
         ),
         llm=llm,
         verbose=True,
@@ -185,12 +187,12 @@ def writer_node(state: WorkflowState) -> WorkflowState:
             f"1. DO NOT use '#' or '##' hashtag headers in your report anywhere.\n"
             f"2. Use '================================================================================' for the main document title and end of report.\n"
             f"3. Use '--------------------------------------------------------------------------------' under section titles (e.g. EXECUTIVE SUMMARY, 1. TERMINOLOGY & TAXONOMY).\n"
-            f"4. Include an ASCII architecture or taxonomy diagram (using +, -, |, ->) to visually illustrate system concepts or flow.\n"
-            f"5. Format tables using clean ASCII borders (+-----+-----+).\n"
-            f"6. Provide extensive technical detail, explanations, and depth for all terms, subfields, applications, and challenges.\n"
+            f"4. For system architecture, use clean inline flowcharts (e.g. [Layer 1: Sensors] ---> [Layer 2: Cloud Engine] ---> [Layer 3: Actuation]). DO NOT draw wide '+---+---|' ASCII boxes.\n"
+            f"5. For applications and comparisons, use clean bulleted key-value sections or clean markdown tables.\n"
+            f"6. Provide extensive technical detail and explanations for all sections: Executive Summary, 1. Terminology, 2. Architecture, 3. Applications, 4. Challenges & Risks, 5. Strategic Roadmap.\n"
             f"7. Ensure the report is 100% complete and NEVER cut off mid-sentence."
         ),
-        expected_output="A comprehensive, highly detailed executive technical report with ASCII diagrams, clean dividers, no hashtag headers, and clean tables.",
+        expected_output="A comprehensive, highly detailed executive technical report with clean flowcharts, clean dividers, no hashtag headers, and full completeness.",
         agent=agent,
     )
     result = Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff()

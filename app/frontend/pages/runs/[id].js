@@ -700,7 +700,7 @@ export default function RunDetail() {
               {copied ? "Copied ✓" : "Copy"}
             </button>
           </div>
-          <div style={{ ...cardStyle, fontFamily: fontSerif, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+          <div style={{ ...cardStyle, fontFamily: fontSans, fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowX: "auto" }}>
             {task.final_report}
           </div>
         </FadeIn>
