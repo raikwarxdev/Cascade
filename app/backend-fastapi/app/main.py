@@ -57,7 +57,7 @@ import litellm
 # Google Gemini API requires conversation histories to strictly end on a user turn.
 # CrewAI agent loops can pass payloads ending on assistant/model turns after tool outputs.
 # This patch intercepts LiteLLM calls for Gemini models and ensures a trailing user turn is present,
-# as well as retrying on transient 503 / 429 errors from Google/Groq.
+# as well as retrying on transient 503 errors and automatically falling back to Groq if any key hits a 429 quota/rate limit.
 _original_litellm_completion = litellm.completion
 
 def _patched_litellm_completion(*args, **kwargs):
@@ -78,9 +78,18 @@ def _patched_litellm_completion(*args, **kwargs):
             return _original_litellm_completion(*args, **kwargs)
         except Exception as exc:
             err_str = str(exc).lower()
-            if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str or "rate" in err_str) and attempt < 2:
+            if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str) and attempt < 2:
                 time.sleep(2 * (attempt + 1))
                 continue
+            if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
+                # If custom key or model hits quota/rate limit, fall back to server's groq/qwen model
+                fallback_kwargs = dict(kwargs)
+                fallback_kwargs["model"] = "groq/qwen/qwen3.6-27b"
+                fallback_kwargs.pop("api_key", None)
+                try:
+                    return _original_litellm_completion(*args, **fallback_kwargs)
+                except Exception:
+                    raise exc
             raise exc
 
 litellm.completion = _patched_litellm_completion
