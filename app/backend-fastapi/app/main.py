@@ -82,10 +82,14 @@ def _patched_litellm_completion(*args, **kwargs):
                 time.sleep(2 * (attempt + 1))
                 continue
             if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
-                # If custom key or model hits quota/rate limit, fall back to server's groq/qwen model
+                # If custom key or model hits quota/rate limit, fall back to server's groq/qwen model with server key
                 fallback_kwargs = dict(kwargs)
                 fallback_kwargs["model"] = "groq/qwen/qwen3.6-27b"
-                fallback_kwargs.pop("api_key", None)
+                groq_key = os.environ.get("GROQ_API_KEY")
+                if groq_key:
+                    fallback_kwargs["api_key"] = groq_key
+                else:
+                    fallback_kwargs.pop("api_key", None)
                 try:
                     return _original_litellm_completion(*args, **fallback_kwargs)
                 except Exception:
@@ -93,6 +97,46 @@ def _patched_litellm_completion(*args, **kwargs):
             raise exc
 
 litellm.completion = _patched_litellm_completion
+
+
+def format_clean_error(exc: Exception) -> str:
+    err_str = str(exc)
+    if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
+        return (
+            "================================================================================\n"
+            "SERVICE NOTICE: PROVIDER RATE LIMIT / QUOTA REACHED\n"
+            "================================================================================\n\n"
+            "The AI provider's free-tier rate limit or daily key quota was exceeded.\n\n"
+            "What happened:\n"
+            "• Your API key or provider experienced temporary rate limiting.\n"
+            "• The system attempted automatic fallback, but all free quotas are currently cooling down.\n\n"
+            "How to resolve:\n"
+            "1. Wait 30-60 seconds for the provider rate-limit window to reset.\n"
+            "2. Click 'Start run' again, or switch providers in Settings.\n\n"
+            "================================================================================"
+        )
+    elif "503" in err_str or "unavailable" in err_str or "high demand" in err_str:
+        return (
+            "================================================================================\n"
+            "SERVICE NOTICE: PROVIDER TEMPORARILY UNAVAILABLE\n"
+            "================================================================================\n\n"
+            "The AI provider is experiencing high demand and returned a temporary 503 error.\n\n"
+            "How to resolve:\n"
+            "1. Please wait 10-15 seconds for the provider load to normalize.\n"
+            "2. Click 'Start run' again.\n\n"
+            "================================================================================"
+        )
+    else:
+        return (
+            "================================================================================\n"
+            "SERVICE NOTICE: RUN COULD NOT COMPLETE\n"
+            "================================================================================\n\n"
+            "The agent run encountered an interruption while communicating with the AI service.\n\n"
+            "How to resolve:\n"
+            "1. Please refresh the page and click 'Start run' again.\n"
+            "2. If using a custom API key in Settings, verify that your key is active.\n\n"
+            "================================================================================"
+        )
 
 # Provider picker for Settings -> "your own API key" feature. Groq is the
 # only one with a built-in server-side key (via GROQ_API_KEY already set
@@ -682,7 +726,7 @@ def stream_task(
                 db_task = db_local.query(TaskRun).filter(TaskRun.id == task_id).first()
                 if db_task:
                     db_task.status = "failed"
-                    db_task.final_report = f"### Run Failed\n\nAn error occurred during agent execution:\n\n```\n{str(e)}\n```\n\n#### Technical Traceback:\n```\n{error_trace}\n```"
+                    db_task.final_report = format_clean_error(e)
                     db_local.commit()
             except Exception as db_err:
                 print(f"Failed to update db status on error: {db_err}")
