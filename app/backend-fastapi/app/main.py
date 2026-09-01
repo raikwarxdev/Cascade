@@ -35,6 +35,9 @@ provider's model automatically.
 """
 import json
 import os
+os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
+os.environ["OTEL_SDK_DISABLED"] = "true"
+
 import threading
 import time
 import uuid
@@ -57,7 +60,7 @@ import litellm
 # Google Gemini API requires conversation histories to strictly end on a user turn.
 # CrewAI agent loops can pass payloads ending on assistant/model turns after tool outputs.
 # This patch intercepts LiteLLM calls for Gemini models and ensures a trailing user turn is present,
-# as well as retrying on transient 503 errors and automatically falling back to Groq if any key hits a 429 quota/rate limit.
+# as well as retrying on transient 503 errors and automatically falling back to Groq if any key hits an error.
 _original_litellm_completion = litellm.completion
 
 def _patched_litellm_completion(*args, **kwargs):
@@ -73,37 +76,28 @@ def _patched_litellm_completion(*args, **kwargs):
     if "num_retries" not in kwargs:
         kwargs["num_retries"] = 3
 
-    for attempt in range(3):
-        try:
-            return _original_litellm_completion(*args, **kwargs)
-        except Exception as exc:
-            err_str = str(exc).lower()
-            if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str) and attempt < 2:
-                time.sleep(2 * (attempt + 1))
-                continue
-            if "429" in err_str or "quota" in err_str or "rate" in err_str or "resource_exhausted" in err_str:
-                # Fall back across Groq's model cascade (qwen -> llama -> mixtral) to bypass single-model token buckets
-                fallback_models = [
-                    "groq/qwen/qwen3.6-27b",
-                    "groq/llama-3.3-70b-versatile",
-                    "groq/mixtral-8x7b-32768",
-                ]
-                groq_key = os.environ.get("GROQ_API_KEY") or ("gsk_" + "IZo3Kh6RqsUlSPS0BUaJWGdyb3FYNTXig0ywLZbJo5Y5QEqc8r8O")
-                for cycle in range(2):
-                    for fb_model in fallback_models:
-                        fallback_kwargs = dict(kwargs)
-                        fallback_kwargs["model"] = fb_model
-                        fallback_kwargs["api_key"] = groq_key
-                        try:
-                            return _original_litellm_completion(*args, **fallback_kwargs)
-                        except Exception as fb_exc:
-                            fb_err_str = str(fb_exc).lower()
-                            if "429" in fb_err_str or "rate" in fb_err_str or "quota" in fb_err_str or "503" in fb_err_str:
-                                continue
-                            raise exc
-                    # If all models in the cascade hit rate limits, pause 15s to reset the 60s bucket
-                    time.sleep(15)
-                raise exc
+    try:
+        return _original_litellm_completion(*args, **kwargs)
+    except Exception as exc:
+        print(f"Primary completion failed ({kwargs.get('model')}): {exc}. Triggering Groq fallback cascade...")
+        fallback_models = [
+            "groq/qwen/qwen3.6-27b",
+            "groq/llama-3.3-70b-versatile",
+            "groq/mixtral-8x7b-32768",
+        ]
+        groq_key = os.environ.get("GROQ_API_KEY") or ("gsk_" + "IZo3Kh6RqsUlSPS0BUaJWGdyb3FYNTXig0ywLZbJo5Y5QEqc8r8O")
+        for cycle in range(2):
+            for fb_model in fallback_models:
+                fallback_kwargs = dict(kwargs)
+                fallback_kwargs["model"] = fb_model
+                fallback_kwargs["api_key"] = groq_key
+                try:
+                    return _original_litellm_completion(*args, **fallback_kwargs)
+                except Exception as fb_exc:
+                    print(f"Fallback model {fb_model} failed: {fb_exc}")
+                    continue
+            time.sleep(10)
+        raise exc
 
 litellm.completion = _patched_litellm_completion
 

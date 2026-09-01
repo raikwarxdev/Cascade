@@ -26,6 +26,9 @@ object is just a plain per-call argument, so there's nothing shared to
 stomp on.
 """
 import os
+os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
+os.environ["OTEL_SDK_DISABLED"] = "true"
+
 import time
 from typing import TypedDict, Any
 from crewai import Agent, Task, Crew, Process, LLM
