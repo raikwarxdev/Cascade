@@ -179,6 +179,12 @@ def writer_node(state: WorkflowState) -> WorkflowState:
     time.sleep(10)
     llm = state.get("llm") or DEFAULT_LLM
     agent = make_writer(llm)
+
+    import urllib.parse
+    topic_clean = urllib.parse.quote(f"clean modern system architecture infographic diagram for {state['topic']}, professional enterprise technical flowchart chart, high quality")
+    diagram_url = f"https://image.pollinations.ai/prompt/{topic_clean}?width=1024&height=512&nologo=true"
+    image_tag = f"![System Architecture Diagram for {state['topic']}]({diagram_url})"
+
     task = Task(
         description=(
             f"Write a comprehensive, in-depth, fully detailed technical report on '{state['topic']}' "
@@ -187,12 +193,13 @@ def writer_node(state: WorkflowState) -> WorkflowState:
             f"1. DO NOT use '#' or '##' hashtag headers in your report anywhere.\n"
             f"2. Use '================================================================================' for the main document title and end of report.\n"
             f"3. Use '--------------------------------------------------------------------------------' under section titles (e.g. EXECUTIVE SUMMARY, 1. TERMINOLOGY & TAXONOMY).\n"
-            f"4. For system architecture, use clean inline flowcharts (e.g. [Layer 1: Sensors] ---> [Layer 2: Cloud Engine] ---> [Layer 3: Actuation]). DO NOT draw wide '+---+---|' ASCII boxes.\n"
+            f"4. Under section '2. SYSTEM ARCHITECTURE', YOU MUST include this exact markdown image line on its own line:\n"
+            f"{image_tag}\n"
             f"5. For applications and comparisons, use clean bulleted key-value sections or clean markdown tables.\n"
             f"6. Provide extensive technical detail and explanations for all sections: Executive Summary, 1. Terminology, 2. Architecture, 3. Applications, 4. Challenges & Risks, 5. Strategic Roadmap.\n"
             f"7. Ensure the report is 100% complete and NEVER cut off mid-sentence."
         ),
-        expected_output="A comprehensive, highly detailed executive technical report with clean flowcharts, clean dividers, no hashtag headers, and full completeness.",
+        expected_output="A comprehensive, highly detailed executive technical report with an embedded visual diagram image graphic, clean dividers, no hashtag headers, and full completeness.",
         agent=agent,
     )
     result = Crew(agents=[agent], tasks=[task], process=Process.sequential).kickoff()
