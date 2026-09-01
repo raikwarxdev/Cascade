@@ -36,6 +36,7 @@ provider's model automatically.
 import json
 import os
 import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -55,7 +56,8 @@ import litellm
 
 # Google Gemini API requires conversation histories to strictly end on a user turn.
 # CrewAI agent loops can pass payloads ending on assistant/model turns after tool outputs.
-# This patch intercepts LiteLLM calls for Gemini models and ensures a trailing user turn is present.
+# This patch intercepts LiteLLM calls for Gemini models and ensures a trailing user turn is present,
+# as well as retrying on transient 503 / 429 errors from Google/Groq.
 _original_litellm_completion = litellm.completion
 
 def _patched_litellm_completion(*args, **kwargs):
@@ -67,7 +69,19 @@ def _patched_litellm_completion(*args, **kwargs):
                 messages = list(messages)
                 messages.append({"role": "user", "content": "Please analyze the tool output and complete the task."})
                 kwargs["messages"] = messages
-    return _original_litellm_completion(*args, **kwargs)
+
+    if "num_retries" not in kwargs:
+        kwargs["num_retries"] = 3
+
+    for attempt in range(3):
+        try:
+            return _original_litellm_completion(*args, **kwargs)
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str or "rate" in err_str) and attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise exc
 
 litellm.completion = _patched_litellm_completion
 
